@@ -1,5 +1,6 @@
 
 # Prices
+[![Rust](https://github.com/Bleznudd/prices/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/Bleznudd/prices/actions/workflows/rust.yml)
 
 Manage prices of your products
 

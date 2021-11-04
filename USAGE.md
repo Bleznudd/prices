@@ -71,6 +71,18 @@ $ prices -p 'tennis ball' 2 10 10
 - tennis ball    2.00€  10.0%  10.0%    2.42€
 ```
 
+### Unix pipes
+
+Prices' output can easily be used in Unix pipes. Here is an example to get products with a selling price greater than 10 using `awk`
+
+```
+$ prices | sed 's/[\%,€]//g' | awk -F '[ ]{2,}' '$4>10 {print $4, $1}'
+13.20 - catnip
+24.20 - scratching post
+11.44 - metal bowl
+```
+
+
 ## Manual edit
 
 To store the data, prices uses the file `~/.local/share/prices/prices.json`, along with a pre-last-edit backup. This mean that in case of emergency (e.g.: prices doesn't work anymore) no data is lost, and everything can be read raw from that file.

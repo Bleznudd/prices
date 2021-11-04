@@ -46,11 +46,9 @@ impl Manager{
     }
     pub fn exists_supplier(&self, name: &str) -> bool{
         if let Some(_pos) = self.suppliers.iter().position(|x| x.name() == name) {
-            true
+            return true
         }
-        else{
-            false
-        }
+        false
     }
 }
 

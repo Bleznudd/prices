@@ -51,11 +51,9 @@ impl Supplier{
     }
     pub fn exists_product(&self, name: &str) -> bool{
         if let Some(_pos) = self.products.iter().position(|x| x.name() == name) {
-            true
+            return true
         }
-        else{
-            false
-        }
+        false
     }
     
 }

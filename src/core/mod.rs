@@ -3,7 +3,29 @@ use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use home::home_dir;
+
 use crate::organizer::{manager::Manager, supplier::Supplier, product::Product};
+
+
+#[derive(Debug)]
+pub struct CoreError{
+    description: String
+}
+impl std::error::Error for CoreError {}
+impl CoreError {
+    fn new(msg: &str) -> CoreError {
+        CoreError{description: "[CoreError] ".to_string() + msg}
+    }
+    fn description(&self) -> &str {
+        self.description.as_ref()
+    }
+}
+impl std::fmt::Display for CoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f,"{}",self.description())
+    }
+}
 
 #[derive(Debug)]
 pub struct Core{
@@ -21,87 +43,70 @@ impl Core{
     }
 
     // Public methods
-    pub fn new() -> Core{
-        let mut sp: String = String::new();
-        match home::home_dir() {
-            Some(path) => (sp = path.into_os_string().into_string().unwrap()+"/.local/share/prices/".into()),
-            None => println!("Impossible to get your home dir! No data can be stored"),
-        }
-        Core{manager: Manager::new(), savepath: sp, savefile: "prices.json".into(), backupfile: "prices.bkp".into()}
+    pub fn new() -> Result<Core, CoreError>{
+        let homedir: Result<PathBuf, CoreError> = home_dir().ok_or(CoreError::new("Impossible to get your home dir! No data can be stored"));
+        let sp: String = homedir?.into_os_string().into_string().unwrap()+"/.local/share/prices/".into();
+        Ok(Core{manager: Manager::new(), savepath: sp, savefile: "prices.json".into(), backupfile: "prices.bkp".into()})
     }
-    pub fn load(&mut self){
+    pub fn load(&mut self) -> Result<(), CoreError>{
         let dirpath: &Path = Path::new(&self.savepath[..]);
         let filepath: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.savefile[..]));
-        let mut file: File = match fs::create_dir_all(dirpath){
-            Err(why) => panic!("couldn't create missing directory {}: {}", dirpath.display(), why),
-            Ok(()) => match File::open(&filepath){
-                Err(_why) => {
-                    match File::create(&filepath){
-                        Err(why) => panic!("couldn't create file {}: {}", filepath.display(), why),
-                        Ok(mut file) => {
-                            match file.write_all("{\"name\":\"Default\",\"suppliers\":[]}".as_bytes()){
-                                Err(why) => panic!("couldn't write to {}: {}", filepath.display(), why),
-                                Ok(()) => () 
-                            }
-                            match File::open(&filepath){
-                                Err(why) => panic!("couldn't open {}: {}", filepath.display(), why),
-                                Ok(file) => file
-                            }
-                        }
-                    }
-                },
-                Ok(file) => file
+        if let Ok(_) = fs::create_dir(dirpath){
+            return Err(CoreError::new("Can't create parent data directory"))
+        }
+        let file: Result<File, CoreError> = match File::open(&filepath){
+            Err(_) => {
+                let wf: Result<File, CoreError> = File::create(&filepath).map_err(|_| CoreError::new("Can't open nor create main file"));
+                wf?.write_all("{\"name\":\"Default\",\"suppliers\":[]}".as_bytes()).ok();
+                match File::open(&filepath){
+                    Err(_) => return Err(CoreError::new("Can't open main file")),
+                    Ok(f) => Ok(f)
+                }
             }
+            Ok(f) => Ok(f)
         };
         let mut s = String::new();
-        match file.read_to_string(&mut s) {
-            Err(why) => panic!("couldn't read {}: {}", filepath.display(), why),
-            Ok(_) => self.manager = serde_json::from_str(&s).unwrap()
-        }
-    }
-    pub fn save(&self){
-        let filepath: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.savefile[..]));
-        let mut file: File = match File::create(&filepath){
-            Err(why) => panic!("couldn't open {}: {}", filepath.display(), why),
-            Ok(file) => file,
+        if let Err(_) = file?.read_to_string(&mut s){
+            return Err(CoreError::new("Main file is corrupted, try restoring from previous backup with --undo"));
         };
-        match file.write_all(serde_json::to_string_pretty(self.manager()).unwrap().as_bytes()) {
-            Err(why) => panic!("couldn't write to {}: {}", filepath.display(), why),
-            Ok(_) => ()
+        match serde_json::from_str(&s){
+            Err(_) => return Err(CoreError::new("Main file is corrupted, try restoring from previous backup with --undo")),
+            Ok(j) => self.manager = j
+        };
+        Ok(())
+    }
+    pub fn save(&self) -> Result<(), CoreError>{
+        let filepath: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.savefile[..]));
+        let file = File::create(&filepath).map_err(|e| CoreError::new(&e.to_string()[..]));
+        match file?.write_all(serde_json::to_string_pretty(self.manager()).unwrap().as_bytes()) {
+            Err(why) => Err(CoreError::new(&why.to_string()[..])),
+            Ok(_) => Ok(())
         }
     }
-    pub fn backup(&self){
+    pub fn backup(&self) -> Result<(), CoreError>{
         let from: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.savefile[..]));
         let to: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.backupfile[..]));
-        match File::open(&to){
-            Err(_why) => {
-                match File::create(&to){
-                    Err(why) => panic!("couldn't create file {}: {}", to.display(), why),
-                    Ok(_) => ()
-                }
+        if let Err(_) = File::open(&to){
+            if let Err(_) = File::create(&to){
+                return Err(CoreError::new("Can't open nor create backup file"))
             }
-            Ok(_) => ()
         }
         match fs::copy(from, to){
-            Err(why) => println!("coulnd't backup: {}", why),
-            Ok(_) => ()
+            Err(why) => Err(CoreError::new(&why.to_string()[..])),
+            Ok(_) => Ok(())
         }
     }
-    pub fn restore(&self){
+    pub fn restore(&self) -> Result<(), CoreError>{
         let from: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.backupfile[..]));
         let to: PathBuf = Path::new(&self.savepath[..]).join(Path::new(&self.savefile[..]));
-        match File::open(&from){
-            Err(_why) => {
-                match File::create(&to){
-                    Err(why) => panic!("couldn't create file {}: {}", to.display(), why),
-                    Ok(_) => ()
-                }
+        if let Err(_) = File::open(&from){
+            if let Err(_) = File::create(&to){
+                return Err(CoreError::new("Can't open nor create save file"))
             }
-            Ok(_) => ()
         }
         match fs::copy(from, to){
-            Err(why) => println!("coulnd't restore: {}", why),
-            Ok(_) => ()
+            Err(why) => Err(CoreError::new(&why.to_string()[..])),
+            Ok(_) => Ok(())
         }
     }
 

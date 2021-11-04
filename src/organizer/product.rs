@@ -90,7 +90,7 @@ impl Product{
 
 impl std::fmt::Display for Product {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "- {: <width$} {: >7.2}{} {: >5.1}{} {: >5.1}{} {: >7.2}{}\n", self.name, self.buyprice, "€", self.taxpercentage, "%", self.gainpercentage, "%", self.sellprice, "€", width = get_MAXLEN())
+        write!(f, "- {: <width$} {: >8.2}{} {: >5.1}{} {: >5.1}{} {: >8.2}{}\n", self.name, self.buyprice, "€", self.taxpercentage, "%", self.gainpercentage, "%", self.sellprice, "€", width = get_MAXLEN())
     }
 }
 
